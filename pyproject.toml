@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ipop-reproduction"
+version = "0.1.0"
+description = "Reproducible IPOP Eu emission benchmark and leakage audit"
+requires-python = ">=3.11"
+dependencies = [
+  "matplotlib>=3.9,<4",
+  "numpy>=1.26,<3",
+  "pandas>=2.2,<3",
+  "pyyaml>=6,<7",
+  "scikit-learn>=1.6,<2",
+  "seaborn>=0.13,<1",
+  "xgboost>=2.1,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
+
+[project.scripts]
+ipop = "ipop.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ipop"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

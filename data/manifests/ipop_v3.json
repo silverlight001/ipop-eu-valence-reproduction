@@ -1,0 +1,22 @@
+{
+  "record_id": 24771186,
+  "version": 1,
+  "doi": "10.6084/m9.figshare.24771186.v1",
+  "license": "CC BY 4.0",
+  "artifacts": [
+    {
+      "name": "Inorganic_Phosphor_Optical_Properties_DB_20230908_IPOP_ver3.csv",
+      "url": "https://ndownloader.figshare.com/files/43535559",
+      "size": 987261,
+      "md5": "8ec75efc133963ce9961626bc483a418",
+      "sha256": "9ebbee222e7b21faac0919761fbc8ee76c304c8ae3c8c89f0ab384a3d53b2924"
+    },
+    {
+      "name": "phosphor_20230908_Eu_only_EmP_AF.csv",
+      "url": "https://ndownloader.figshare.com/files/43535562",
+      "size": 570738,
+      "md5": "8aa14a486b06e20572a9707225f64e28",
+      "sha256": "c573eee9a3893a8501be83f24807eac10f633d32d439c048c0cdc17fd8233afd"
+    }
+  ]
+}
