@@ -59,3 +59,25 @@ def test_overlap_audit_rejects_deliberately_corrupted_assignment() -> None:
     corrupted = pd.concat([assignments, duplicated], ignore_index=True)
     with pytest.raises(SplitLeakageError):
         audit_split_overlap(frame, corrupted, "group_formula")
+
+
+def test_overlap_audit_rejects_single_fold_assignment() -> None:
+    frame = grouped_frame()
+    assignments = build_outer_splits(frame, "group_formula")
+    corrupted = assignments.assign(fold=0)
+    with pytest.raises(SplitLeakageError, match="exactly five non-empty folds"):
+        audit_split_overlap(frame, corrupted, "group_formula")
+
+
+def test_overlap_audit_rejects_missing_outer_fold() -> None:
+    frame = grouped_frame()
+    assignments = build_outer_splits(frame, "group_formula")
+    corrupted = assignments.assign(fold=assignments["fold"].replace(4, 3))
+    with pytest.raises(SplitLeakageError, match="exactly five non-empty folds"):
+        audit_split_overlap(frame, corrupted, "group_formula")
+
+
+@pytest.mark.parametrize("kwargs", [{"n_splits": 4}, {"seed": 1}])
+def test_outer_splits_reject_non_contract_parameters(kwargs: dict[str, int]) -> None:
+    with pytest.raises(ValueError, match="fixed outer split contract"):
+        build_outer_splits(grouped_frame(), "group_formula", **kwargs)

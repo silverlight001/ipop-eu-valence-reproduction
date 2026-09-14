@@ -32,6 +32,8 @@ def build_outer_splits(
     seed: int = 42,
 ) -> pd.DataFrame:
     """Assign each eligible row to exactly one deterministic outer test fold."""
+    if n_splits != 5 or seed != 42:
+        raise ValueError("fixed outer split contract requires n_splits=5 and seed=42")
     _validate_protocol(protocol)
     if "row_id" not in frame:
         raise KeyError("frame must contain row_id")
@@ -75,6 +77,10 @@ def audit_split_overlap(
         raise SplitLeakageError("A row is assigned to more than one outer test fold")
     if frame["row_id"].duplicated().any():
         raise SplitLeakageError("frame contains duplicate row_id values")
+    expected_folds = set(range(5))
+    actual_folds = set(assignments["fold"])
+    if actual_folds != expected_folds or assignments["fold"].value_counts().min() <= 0:
+        raise SplitLeakageError("assignments must contain exactly five non-empty folds")
 
     eligible = frame.dropna(subset=[GROUP_COLUMNS[protocol]] if protocol != "random_row" else []).copy()
     eligible_ids = set(eligible["row_id"])
