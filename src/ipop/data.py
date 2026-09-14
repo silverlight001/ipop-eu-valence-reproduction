@@ -5,8 +5,10 @@ import json
 import os
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+
+import pandas as pd
 
 
 class ChecksumMismatch(ValueError):
@@ -29,6 +31,64 @@ class DatasetManifest:
     doi: str
     license: str
     artifacts: tuple[ArtifactSpec, ...]
+
+
+MASTER_TARGET_COLUMNS = (
+    "Emission max. (nm)",
+    "CIE x coordinate",
+    "CIE y coordinate",
+    "Int. quantum efficiency (%)",
+    "Ext. quantum efficiency (%)",
+    "Thermal quenching temp. (K)",
+    "1st Excitation max. (nm)",
+    "2nd Excitation max. (nm)",
+    "3rd Excitation max. (nm)",
+    "Decay time (ns)",
+)
+
+
+class DatasetValidationError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class DatasetSummary:
+    records: int
+    unique_hosts: int
+    unique_references: int
+    target_observations: int
+
+    def as_dict(self) -> dict[str, int]:
+        return asdict(self)
+
+
+def load_master_csv(path: str | Path) -> pd.DataFrame:
+    frame = pd.read_csv(path)
+    frame.columns = [str(column).strip() for column in frame.columns]
+    return frame.dropna(how="all").reset_index(drop=True)
+
+
+def summarize_master(frame: pd.DataFrame) -> DatasetSummary:
+    required = {"Tag", "Host", "Reference", *MASTER_TARGET_COLUMNS}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise DatasetValidationError(f"Missing required columns: {missing}")
+    return DatasetSummary(
+        records=len(frame),
+        unique_hosts=int(frame["Host"].nunique(dropna=True)),
+        unique_references=int(frame["Reference"].nunique(dropna=True)),
+        target_observations=int(frame[list(MASTER_TARGET_COLUMNS)].notna().sum().sum()),
+    )
+
+
+def validate_master(frame: pd.DataFrame) -> DatasetSummary:
+    summary = summarize_master(frame)
+    expected = DatasetSummary(3952, 2238, 553, 16023)
+    if summary != expected:
+        raise DatasetValidationError(
+            f"Published invariants differ: expected={expected.as_dict()}, actual={summary.as_dict()}"
+        )
+    return summary
 
 
 def load_manifest(path: str | Path) -> DatasetManifest:
