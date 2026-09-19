@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 
@@ -80,3 +81,43 @@ def test_provenance_records_both_hashes_and_retrieval_time(tmp_path: Path) -> No
     )
     assert provenance["retrieved_at"] == "2026-09-14T00:00:00Z"
     assert provenance["artifacts"][0]["sha256"] == hashlib.sha256(payload).hexdigest()
+
+
+def test_download_uses_verified_official_mirror_after_figshare_403(tmp_path: Path) -> None:
+    payload = b"abc"
+    manifest_path = tmp_path / "manifest.json"
+    primary_url = "https://ndownloader.figshare.com/files/43535559"
+    manifest_path.write_text(json.dumps({
+        "record_id": 1, "version": 1, "doi": "d", "license": "l",
+        "artifacts": [{
+            "name": "Inorganic_Phosphor_Optical_Properties_DB_20230908_IPOP_ver3.csv",
+            "url": primary_url,
+            "size": len(payload),
+            "md5": hashlib.md5(payload).hexdigest(),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }],
+    }), encoding="utf-8")
+    attempted_urls: list[str] = []
+
+    def fetcher(url: str, destination: Path) -> None:
+        attempted_urls.append(url)
+        if url == primary_url:
+            raise HTTPError(url, 403, "Forbidden", None, None)
+        destination.write_bytes(payload)
+
+    resolved_urls: dict[str, str] = {}
+    paths = download_artifacts(
+        load_manifest(manifest_path), tmp_path / "raw", fetcher=fetcher, resolved_urls=resolved_urls
+    )
+    provenance = build_provenance_record(
+        load_manifest(manifest_path), paths, "2026-09-14T00:00:00Z", resolved_urls
+    )
+
+    assert attempted_urls == [
+        primary_url,
+        (
+            "https://raw.githubusercontent.com/KRICT-DATA/IPOP-dataset-ver-3.0/main/"
+            "Inorganic_Phosphor_Optical_Properties_DB_20230908_IPOP_ver3.csv"
+        ),
+    ]
+    assert provenance["artifacts"][0]["retrieved_url"] == attempted_urls[-1]

@@ -7,6 +7,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pandas as pd
 
@@ -45,6 +46,9 @@ MASTER_TARGET_COLUMNS = (
     "3rd Excitation max. (nm)",
     "Decay time (ns)",
 )
+
+FIGSHARE_DOWNLOAD_PREFIX = "https://ndownloader.figshare.com/"
+OFFICIAL_GITHUB_MIRROR = "https://raw.githubusercontent.com/KRICT-DATA/IPOP-dataset-ver-3.0/main"
 
 
 class DatasetValidationError(ValueError):
@@ -125,7 +129,10 @@ def verify_artifact(path: str | Path, artifact: ArtifactSpec) -> None:
 
 
 def build_provenance_record(
-    manifest: DatasetManifest, paths: list[Path], retrieved_at: str
+    manifest: DatasetManifest,
+    paths: list[Path],
+    retrieved_at: str,
+    retrieved_urls: dict[str, str] | None = None,
 ) -> dict[str, object]:
     by_name = {artifact.name: artifact for artifact in manifest.artifacts}
     return {
@@ -138,6 +145,7 @@ def build_provenance_record(
             {
                 "name": path.name,
                 "url": by_name[path.name].url,
+                "retrieved_url": (retrieved_urls or {}).get(path.name, by_name[path.name].url),
                 "size": path.stat().st_size,
                 "md5": compute_digest(path, "md5"),
                 "sha256": compute_digest(path, "sha256"),
@@ -151,11 +159,19 @@ def _url_fetcher(url: str, destination: Path) -> None:
     urllib.request.urlretrieve(url, destination)
 
 
+def _official_mirror_url(artifact: ArtifactSpec) -> str | None:
+    """Return the publisher's GitHub mirror for a Figshare-hosted IPOP artifact."""
+    if artifact.url.startswith(FIGSHARE_DOWNLOAD_PREFIX):
+        return f"{OFFICIAL_GITHUB_MIRROR}/{artifact.name}"
+    return None
+
+
 def download_artifacts(
     manifest: DatasetManifest,
     destination: str | Path,
     names: set[str] | None = None,
     fetcher: Callable[[str, Path], None] | None = None,
+    resolved_urls: dict[str, str] | None = None,
 ) -> list[Path]:
     root = Path(destination)
     root.mkdir(parents=True, exist_ok=True)
@@ -171,12 +187,25 @@ def download_artifacts(
         partial_path = final_path.with_name(final_path.name + ".part")
         if final_path.exists():
             verify_artifact(final_path, artifact)
+            if resolved_urls is not None:
+                resolved_urls[artifact.name] = artifact.url
             completed.append(final_path)
             continue
         try:
-            fetch(artifact.url, partial_path)
+            retrieved_url = artifact.url
+            try:
+                fetch(retrieved_url, partial_path)
+            except HTTPError as error:
+                mirror_url = _official_mirror_url(artifact)
+                if error.code != 403 or mirror_url is None:
+                    raise
+                fetched_url = mirror_url
+                fetch(fetched_url, partial_path)
+                retrieved_url = fetched_url
             verify_artifact(partial_path, artifact)
             os.replace(partial_path, final_path)
+            if resolved_urls is not None:
+                resolved_urls[artifact.name] = retrieved_url
             completed.append(final_path)
         except Exception:
             partial_path.unlink(missing_ok=True)
