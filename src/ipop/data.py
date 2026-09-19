@@ -133,6 +133,7 @@ def build_provenance_record(
     paths: list[Path],
     retrieved_at: str,
     retrieved_urls: dict[str, str] | None = None,
+    reused_artifacts: set[str] | None = None,
 ) -> dict[str, object]:
     by_name = {artifact.name: artifact for artifact in manifest.artifacts}
     return {
@@ -145,7 +146,14 @@ def build_provenance_record(
             {
                 "name": path.name,
                 "url": by_name[path.name].url,
-                "retrieved_url": (retrieved_urls or {}).get(path.name, by_name[path.name].url),
+                "retrieved_url": (retrieved_urls or {}).get(path.name),
+                "retrieval_status": (
+                    "reused_verified"
+                    if path.name in (reused_artifacts or set()) and path.name in (retrieved_urls or {})
+                    else "preexisting_verified"
+                    if path.name in (reused_artifacts or set())
+                    else "downloaded"
+                ),
                 "size": path.stat().st_size,
                 "md5": compute_digest(path, "md5"),
                 "sha256": compute_digest(path, "sha256"),
@@ -172,6 +180,7 @@ def download_artifacts(
     names: set[str] | None = None,
     fetcher: Callable[[str, Path], None] | None = None,
     resolved_urls: dict[str, str] | None = None,
+    reused_artifacts: set[str] | None = None,
 ) -> list[Path]:
     root = Path(destination)
     root.mkdir(parents=True, exist_ok=True)
@@ -187,8 +196,8 @@ def download_artifacts(
         partial_path = final_path.with_name(final_path.name + ".part")
         if final_path.exists():
             verify_artifact(final_path, artifact)
-            if resolved_urls is not None:
-                resolved_urls[artifact.name] = artifact.url
+            if reused_artifacts is not None:
+                reused_artifacts.add(artifact.name)
             completed.append(final_path)
             continue
         try:

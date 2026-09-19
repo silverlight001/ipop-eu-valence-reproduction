@@ -51,15 +51,34 @@ def write_validation_report(summary: DatasetSummary, path: str | Path) -> None:
 def command_download() -> None:
     """Fetch pinned artifacts and record their provenance."""
     manifest = load_manifest(MANIFEST)
-    resolved_urls: dict[str, str] = {}
-    paths = download_artifacts(manifest, RAW, resolved_urls=resolved_urls)
+    resolved_urls = _previous_retrieved_urls()
+    reused_artifacts: set[str] = set()
+    paths = download_artifacts(
+        manifest, RAW, resolved_urls=resolved_urls, reused_artifacts=reused_artifacts
+    )
     provenance = build_provenance_record(
-        manifest, paths, datetime.now(UTC).isoformat(), resolved_urls
+        manifest, paths, datetime.now(UTC).isoformat(), resolved_urls, reused_artifacts
     )
     INTERIM.mkdir(parents=True, exist_ok=True)
     (INTERIM / "source_provenance.json").write_text(
         json.dumps(provenance, indent=2), encoding="utf-8"
     )
+
+
+def _previous_retrieved_urls() -> dict[str, str]:
+    """Reuse recorded HTTP origins without claiming cached data came from Figshare."""
+    provenance_path = INTERIM / "source_provenance.json"
+    if not provenance_path.is_file():
+        return {}
+    payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+    return {
+        str(artifact["name"]): str(artifact["retrieved_url"])
+        for artifact in payload.get("artifacts", [])
+        if isinstance(artifact, dict)
+        and isinstance(artifact.get("name"), str)
+        and isinstance(artifact.get("retrieved_url"), str)
+        and artifact["retrieved_url"].startswith(("https://", "http://"))
+    }
 
 
 def command_validate() -> DatasetSummary:
@@ -74,12 +93,18 @@ def command_prepare() -> dict[str, int]:
     emission = load_emission_features(RAW / EMISSION_NAME)
     master = load_master_csv(RAW / MASTER_NAME)
     result = attach_emission_groups(emission, master)
+    ambiguous_reference_rows = int(result.audit["status"].eq("ambiguous_reference").sum())
+    if ambiguous_reference_rows != 6:
+        raise ValueError(
+            "Expected exactly 6 ambiguous source DOI rows, "
+            f"got {ambiguous_reference_rows}"
+        )
     INTERIM.mkdir(parents=True, exist_ok=True)
     result.prepared.to_csv(INTERIM / "emission_prepared.csv", index=False)
     result.audit.to_csv(INTERIM / "metadata_join_audit.csv", index=False)
     return {
         "emission_rows": len(result.prepared),
-        "ambiguous_reference_rows": int(result.audit["status"].eq("ambiguous_reference").sum()),
+        "ambiguous_reference_rows": ambiguous_reference_rows,
     }
 
 

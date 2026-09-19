@@ -121,3 +121,69 @@ def test_download_uses_verified_official_mirror_after_figshare_403(tmp_path: Pat
         ),
     ]
     assert provenance["artifacts"][0]["retrieved_url"] == attempted_urls[-1]
+
+
+def test_rerun_preserves_verified_mirror_source_and_enforces_pin(tmp_path: Path) -> None:
+    payload = b"abc"
+    manifest_path = tmp_path / "manifest.json"
+    primary_url = "https://ndownloader.figshare.com/files/43535559"
+    artifact_name = "Inorganic_Phosphor_Optical_Properties_DB_20230908_IPOP_ver3.csv"
+    manifest_path.write_text(json.dumps({
+        "record_id": 1, "version": 1, "doi": "d", "license": "l",
+        "artifacts": [{
+            "name": artifact_name,
+            "url": primary_url,
+            "size": len(payload),
+            "md5": hashlib.md5(payload).hexdigest(),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }],
+    }), encoding="utf-8")
+    manifest = load_manifest(manifest_path)
+    mirror_url = (
+        "https://raw.githubusercontent.com/KRICT-DATA/IPOP-dataset-ver-3.0/main/"
+        f"{artifact_name}"
+    )
+
+    def mirror_fetcher(url: str, destination: Path) -> None:
+        if url == primary_url:
+            raise HTTPError(url, 403, "Forbidden", None, None)
+        destination.write_bytes(payload)
+
+    first_sources: dict[str, str] = {}
+    first_reused: set[str] = set()
+    paths = download_artifacts(
+        manifest,
+        tmp_path / "raw",
+        fetcher=mirror_fetcher,
+        resolved_urls=first_sources,
+        reused_artifacts=first_reused,
+    )
+    first = build_provenance_record(
+        manifest, paths, "2026-09-14T00:00:00Z", first_sources, first_reused
+    )
+
+    def no_fetch(url: str, destination: Path) -> None:
+        raise AssertionError(f"rerun should reuse verified file, not fetch {url}")
+
+    second_sources = dict(first_sources)
+    second_reused: set[str] = set()
+    paths = download_artifacts(
+        manifest,
+        tmp_path / "raw",
+        fetcher=no_fetch,
+        resolved_urls=second_sources,
+        reused_artifacts=second_reused,
+    )
+    second = build_provenance_record(
+        manifest, paths, "2026-09-15T00:00:00Z", second_sources, second_reused
+    )
+
+    assert first["artifacts"][0]["retrieved_url"] == mirror_url
+    assert first["artifacts"][0]["retrieval_status"] == "downloaded"
+    assert second["artifacts"][0]["retrieved_url"] == mirror_url
+    assert second["artifacts"][0]["retrieval_status"] == "reused_verified"
+    assert second_reused == {artifact_name}
+
+    paths[0].write_bytes(b"bad")
+    with pytest.raises(ChecksumMismatch, match=artifact_name):
+        download_artifacts(manifest, tmp_path / "raw", fetcher=no_fetch)

@@ -4,7 +4,7 @@
 
 ## 数据与许可
 
-工作流下载 Figshare 固定版本的 IPOP v3 主表和 Eu 发射特征表，并在使用前检查文件大小、MD5 与 SHA-256。数据集采用 CC BY 4.0；下载后的原始数据、处理数据和实验输出均被 Git 忽略。
+工作流下载 Figshare 固定版本的 IPOP v3 主表和 Eu 发射特征表，并在使用前检查文件大小、MD5 与 SHA-256。仅当 Figshare 返回 HTTP 403 时，下载器才回退至论文作者/发布方 KRICT 的官方 GitHub 镜像；镜像内容仍必须通过同一份固定 size、MD5 和 SHA-256 校验。`data/interim/source_provenance.json` 同时记录清单来源与实际 `retrieved_url`，不会把已验证的镜像缓存伪称为重新从 Figshare 下载。数据集采用 CC BY 4.0；下载后的原始数据、处理数据和实验输出均被 Git 忽略。
 
 ## 为什么不能声称逐数值复现
 
