@@ -60,6 +60,7 @@ def run_experiment(
 ) -> RunArtifacts:
     """Evaluate every configured protocol, feature set, model, and outer fold.
 
+    All outer assignments, audits, and metadata are persisted before any model fit.
     Outer assignments determine eligibility, so rows with missing Reference values are
     excluded from every part of the reference-disjoint experiment, including predictions.
     """
@@ -73,15 +74,40 @@ def run_experiment(
 
     split_frames: list[pd.DataFrame] = []
     audit_frames: list[pd.DataFrame] = []
-    prediction_rows: list[dict[str, object]] = []
-    metric_rows: list[dict[str, object]] = []
-    parameter_records: dict[str, dict[str, object]] = {}
-
     for protocol_value in config["protocols"]:
         protocol = str(protocol_value)
         assignments = build_outer_splits(frame, protocol, outer_folds, seed)
         split_frames.append(assignments)
         audit_frames.append(audit_split_overlap(frame, assignments, protocol))
+
+    splits = pd.concat(split_frames, ignore_index=True).sort_values(
+        ["protocol", "fold", "row_id"]
+    )
+    audits = pd.concat(audit_frames, ignore_index=True).sort_values(
+        ["protocol", "fold", "audit_column"]
+    )
+    splits.to_csv(paths.splits, index=False)
+    audits.to_csv(paths.overlap_audit, index=False)
+    _write_json(
+        paths.run_metadata,
+        {
+            "seed": seed,
+            "config": config,
+            "versions": {
+                "python": platform.python_version(),
+                **{
+                    package: version(package)
+                    for package in ("numpy", "pandas", "scikit-learn", "xgboost")
+                },
+            },
+        },
+    )
+
+    prediction_rows: list[dict[str, object]] = []
+    metric_rows: list[dict[str, object]] = []
+    parameter_records: dict[str, dict[str, object]] = {}
+    for protocol_value, assignments in zip(config["protocols"], split_frames, strict=True):
+        protocol = str(protocol_value)
         eligible = frame.loc[frame["row_id"].isin(assignments["row_id"])].copy()
 
         for feature_set_value in config["feature_sets"]:
@@ -154,35 +180,13 @@ def run_experiment(
                             f"{protocol}|{feature_set}|{model_name}|{fold}"
                         ] = dict(estimator.best_params_)
 
-    splits = pd.concat(split_frames, ignore_index=True).sort_values(
-        ["protocol", "fold", "row_id"]
-    )
-    audits = pd.concat(audit_frames, ignore_index=True).sort_values(
-        ["protocol", "fold", "audit_column"]
-    )
     predictions = pd.DataFrame(prediction_rows).sort_values(
         ["protocol", "feature_set", "model", "fold", "row_id"]
     )
     folds = pd.DataFrame(metric_rows).sort_values(["protocol", "feature_set", "model", "fold"])
     summary = aggregate_metrics(folds).sort_values(["protocol", "feature_set", "model"])
-    splits.to_csv(paths.splits, index=False)
-    audits.to_csv(paths.overlap_audit, index=False)
     predictions.to_csv(paths.predictions, index=False)
     folds.to_csv(paths.fold_metrics, index=False)
     summary.to_csv(paths.summary_metrics, index=False)
     _write_json(paths.best_params, parameter_records)
-    _write_json(
-        paths.run_metadata,
-        {
-            "seed": seed,
-            "config": config,
-            "versions": {
-                "python": platform.python_version(),
-                **{
-                    package: version(package)
-                    for package in ("numpy", "pandas", "scikit-learn", "xgboost")
-                },
-            },
-        },
-    )
     return paths

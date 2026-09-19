@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.model_selection import GridSearchCV, GroupKFold
 
 from ipop import experiment
@@ -77,6 +78,58 @@ def test_run_persists_replayable_outer_fold_artifacts(tmp_path: Path) -> None:
     assert metadata["seed"] == 42
     assert metadata["config"] == lightweight_config()
     assert "python" in metadata["versions"]
+
+
+def test_all_protocol_preflight_artifacts_survive_first_fit_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class FailingEstimator:
+        def fit(self, X, y):
+            raise RuntimeError("first fit failed")
+
+    monkeypatch.setattr(experiment, "build_dummy_pipeline", FailingEstimator)
+    frame = synthetic_emission()
+    frame.loc[0, "Reference"] = pd.NA
+    config = lightweight_config()
+    artifact_names = ("splits.csv", "overlap_audit.csv", "run_metadata.json")
+    for directory in (tmp_path / "first", tmp_path / "second"):
+        with pytest.raises(RuntimeError, match="first fit failed"):
+            experiment.run_experiment(frame, config, directory)
+
+        assert all((directory / name).is_file() for name in artifact_names)
+        splits = pd.read_csv(directory / "splits.csv")
+        audits = pd.read_csv(directory / "overlap_audit.csv")
+        assert len(splits) == 199
+        assert set(splits["protocol"]) == set(config["protocols"])
+        for protocol, assignments in splits.groupby("protocol"):
+            expected_ids = set(range(1 if protocol == "group_reference" else 0, 50))
+            assert set(assignments["row_id"]) == expected_ids
+            assert not assignments["row_id"].duplicated().any()
+            assert set(assignments["fold"]) == set(range(5))
+        assert len(audits) == 60
+        assert set(audits[["protocol", "fold", "audit_column"]].itertuples(
+            index=False, name=None
+        )) == {
+            (protocol, fold, column)
+            for protocol in config["protocols"]
+            for fold in range(5)
+            for column in ("Formula", "Host", "Reference")
+        }
+        assert audits["enforced"].sum() == 15
+        assert audits.loc[audits["enforced"], "overlap_count"].eq(0).all()
+        for table, keys in (
+            (splits, ["protocol", "fold", "row_id"]),
+            (audits, ["protocol", "fold", "audit_column"]),
+        ):
+            pd.testing.assert_frame_equal(table, table.sort_values(keys).reset_index(drop=True))
+        metadata = json.loads((directory / "run_metadata.json").read_text(encoding="utf-8"))
+        assert metadata["seed"] == 42
+        assert metadata["config"] == config
+        assert set(metadata["versions"]) == {
+            "python", "numpy", "pandas", "scikit-learn", "xgboost"
+        }
+    for name in artifact_names:
+        assert (tmp_path / "first" / name).read_bytes() == (tmp_path / "second" / name).read_bytes()
 
 
 def test_reference_protocol_excludes_missing_reference_rows_everywhere(tmp_path: Path) -> None:
