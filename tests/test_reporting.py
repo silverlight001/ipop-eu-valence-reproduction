@@ -21,6 +21,25 @@ def _write_report_inputs(run: Path) -> None:
             "r2_std": [0.02, 0.08],
         }
     ).to_csv(run / "summary_metrics.csv", index=False)
+    fold_rows = []
+    for protocol in ("random_row", "group_host"):
+        for fold in range(5):
+            fold_rows.append(
+                {
+                    "protocol": protocol,
+                    "feature_set": "AF+T+ES",
+                    "model": "xgboost",
+                    "fold": fold,
+                    "train_rows": 100,
+                    "test_rows": 25,
+                    "train_groups": 100,
+                    "test_groups": 25,
+                    "mae": 15.0,
+                    "rmse": 31.0,
+                    "r2": 0.75,
+                }
+            )
+    pd.DataFrame(fold_rows).to_csv(run / "fold_metrics.csv", index=False)
     pd.DataFrame(
         {
             "protocol": ["random_row", "group_host"],
@@ -79,6 +98,70 @@ def test_report_explains_missing_required_protocol(tmp_path: Path) -> None:
     summary = pd.read_csv(run / "summary_metrics.csv")
     summary.loc[summary["protocol"] == "group_host", "protocol"] = "group_formula"
     summary.to_csv(run / "summary_metrics.csv", index=False)
+    folds = pd.read_csv(run / "fold_metrics.csv")
+    folds.loc[folds["protocol"] == "group_host", "protocol"] = "group_formula"
+    folds.to_csv(run / "fold_metrics.csv", index=False)
 
     with pytest.raises(ValueError, match="group_host"):
         build_report(run, dataset_summary=_dataset_summary(), join_summary=_join_summary())
+
+
+def test_report_requires_fold_metrics_artifact(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    _write_report_inputs(run)
+    (run / "fold_metrics.csv").unlink()
+
+    with pytest.raises(ValueError, match="fold_metrics.csv"):
+        build_report(run, dataset_summary=_dataset_summary(), join_summary=_join_summary())
+
+
+def test_report_rejects_fold_metrics_missing_required_column(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    _write_report_inputs(run)
+    folds = pd.read_csv(run / "fold_metrics.csv").drop(columns="fold")
+    folds.to_csv(run / "fold_metrics.csv", index=False)
+
+    with pytest.raises(ValueError, match="fold_metrics.csv.*fold"):
+        build_report(run, dataset_summary=_dataset_summary(), join_summary=_join_summary())
+
+
+def test_report_rejects_fold_metrics_inconsistent_with_summary(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    _write_report_inputs(run)
+    folds = pd.read_csv(run / "fold_metrics.csv")
+    folds = folds.loc[~((folds["protocol"] == "random_row") & (folds["fold"] == 4))]
+    folds.to_csv(run / "fold_metrics.csv", index=False)
+
+    with pytest.raises(ValueError, match="fold_metrics.csv.*random_row"):
+        build_report(run, dataset_summary=_dataset_summary(), join_summary=_join_summary())
+
+
+@pytest.mark.parametrize(
+    ("r2_mean", "mae_mean", "has_difference"),
+    [
+        (0.861, 14.611, True),
+        (0.860, 14.611, False),
+        (0.760, 21.612, True),
+        (0.760, 21.611, False),
+    ],
+)
+def test_report_marks_reproduction_difference_only_beyond_strict_thresholds(
+    tmp_path: Path, r2_mean: float, mae_mean: float, has_difference: bool
+) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    _write_report_inputs(run)
+    summary = pd.read_csv(run / "summary_metrics.csv")
+    random_row = summary["protocol"] == "random_row"
+    summary.loc[random_row, "r2_mean"] = r2_mean
+    summary.loc[random_row, "mae_mean"] = mae_mean
+    summary.to_csv(run / "summary_metrics.csv", index=False)
+
+    findings = build_report(
+        run, dataset_summary=_dataset_summary(), join_summary=_join_summary()
+    ).findings.read_text(encoding="utf-8")
+
+    assert ("## 复现差异" in findings) is has_difference

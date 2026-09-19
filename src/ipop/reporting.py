@@ -30,6 +30,21 @@ FIGURE_NAMES = (
     "residuals_by_protocol.png",
 )
 
+FOLD_METRIC_COLUMNS = {
+    "protocol",
+    "feature_set",
+    "model",
+    "fold",
+    "train_rows",
+    "test_rows",
+    "train_groups",
+    "test_groups",
+    "mae",
+    "rmse",
+    "r2",
+}
+FOLD_KEY_COLUMNS = ("protocol", "feature_set", "model")
+
 
 def _require_rows(frame: pd.DataFrame, description: str) -> pd.DataFrame:
     """Return a non-empty result selection or raise an actionable validation error."""
@@ -53,6 +68,51 @@ def _selected_xgboost_summary(summary: pd.DataFrame) -> pd.DataFrame:
     return selected
 
 
+def _read_and_validate_fold_metrics(root: Path, summary: pd.DataFrame) -> pd.DataFrame:
+    """Read the fold-level artifact and verify its aggregate contract."""
+    path = root / "fold_metrics.csv"
+    if not path.is_file():
+        raise ValueError("Report input is missing required artifact: fold_metrics.csv")
+    try:
+        folds = pd.read_csv(path)
+    except (OSError, pd.errors.EmptyDataError, pd.errors.ParserError) as error:
+        raise ValueError("Report input cannot read required artifact: fold_metrics.csv") from error
+
+    missing_columns = sorted(FOLD_METRIC_COLUMNS - set(folds.columns))
+    if missing_columns:
+        raise ValueError(
+            "fold_metrics.csv is missing required columns: " + ", ".join(missing_columns)
+        )
+
+    summary_columns = [*FOLD_KEY_COLUMNS, "fold_count"]
+    expected = summary.loc[:, summary_columns]
+    if expected.duplicated(FOLD_KEY_COLUMNS).any():
+        raise ValueError("summary_metrics.csv has duplicate protocol/feature_set/model combinations")
+    expected_keys = set(expected.loc[:, FOLD_KEY_COLUMNS].itertuples(index=False, name=None))
+    observed_keys = set(folds.loc[:, FOLD_KEY_COLUMNS].itertuples(index=False, name=None))
+    if observed_keys != expected_keys:
+        raise ValueError(
+            "fold_metrics.csv protocol/feature_set/model combinations disagree with summary_metrics.csv"
+        )
+
+    for row in expected.itertuples(index=False):
+        key = (row.protocol, row.feature_set, row.model)
+        count = row.fold_count
+        if pd.isna(count) or int(count) != count or count < 1:
+            raise ValueError(f"summary_metrics.csv has invalid fold_count for {key}")
+        expected_folds = set(range(int(count)))
+        mask = (folds["protocol"] == row.protocol) & (folds["feature_set"] == row.feature_set)
+        mask &= folds["model"] == row.model
+        observed_folds = set(folds.loc[mask, "fold"])
+        if observed_folds != expected_folds or int(mask.sum()) != int(count):
+            raise ValueError(
+                "fold_metrics.csv folds for "
+                f"{row.protocol}/{row.feature_set}/{row.model} disagree with "
+                f"summary fold_count={int(count)}"
+            )
+    return folds
+
+
 def _save_figure(path: Path) -> None:
     plt.tight_layout()
     plt.savefig(path, dpi=180, bbox_inches="tight", pad_inches=0.1)
@@ -69,6 +129,7 @@ def build_report(
     figures_dir = root / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     summary = pd.read_csv(root / "summary_metrics.csv")
+    _read_and_validate_fold_metrics(root, summary)
     predictions = pd.read_csv(root / "predictions.csv")
     audit = pd.read_csv(root / "overlap_audit.csv")
 
