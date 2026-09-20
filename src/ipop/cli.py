@@ -22,21 +22,34 @@ from ipop.features import load_emission_features
 from ipop.metadata import attach_emission_groups
 from ipop.models import load_experiment_config
 from ipop.reporting import build_report
+from ipop.valence import run_valence_comparison
+from ipop.valence_reporting import build_valence_report
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "data/manifests/ipop_v3.json"
 RAW = ROOT / "data/raw"
 INTERIM = ROOT / "data/interim"
 OUTPUT = ROOT / "outputs/emission-xgb"
+VALENCE_OUTPUT = ROOT / "outputs/emission-valence-comparison"
 MASTER_NAME = "Inorganic_Phosphor_Optical_Properties_DB_20230908_IPOP_ver3.csv"
 EMISSION_NAME = "phosphor_20230908_Eu_only_EmP_AF.csv"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the stable six-command public interface."""
+    """Build the stable public workflow interface."""
     parser = argparse.ArgumentParser(prog="ipop")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("download", "validate", "prepare-emission", "run", "report", "all"):
+    for command in (
+        "download",
+        "validate",
+        "prepare-emission",
+        "run",
+        "report",
+        "all",
+        "run-valence",
+        "report-valence",
+        "all-valence",
+    ):
         subparsers.add_parser(command)
     return parser
 
@@ -99,12 +112,20 @@ def command_prepare() -> dict[str, int]:
             "Expected exactly 6 ambiguous source DOI rows, "
             f"got {ambiguous_reference_rows}"
         )
+    valence_counts = result.prepared["Eu valence"].value_counts().to_dict()
+    if valence_counts != {3: 1039, 2: 626}:
+        raise ValueError(
+            "Expected Eu valence counts {2: 626, 3: 1039}, "
+            f"got {dict(sorted(valence_counts.items()))}"
+        )
     INTERIM.mkdir(parents=True, exist_ok=True)
     result.prepared.to_csv(INTERIM / "emission_prepared.csv", index=False)
     result.audit.to_csv(INTERIM / "metadata_join_audit.csv", index=False)
     return {
         "emission_rows": len(result.prepared),
         "ambiguous_reference_rows": ambiguous_reference_rows,
+        "eu2_rows": int(valence_counts[2]),
+        "eu3_rows": int(valence_counts[3]),
     }
 
 
@@ -132,6 +153,21 @@ def command_report() -> None:
     )
 
 
+def command_run_valence() -> None:
+    """Rerun pooled and valence-separated models on identical folds."""
+    frame = pd.read_csv(INTERIM / "emission_prepared.csv")
+    config = load_experiment_config(ROOT / "configs/emission_xgb.yaml")
+    config["data_provenance"] = json.loads(
+        (INTERIM / "source_provenance.json").read_text(encoding="utf-8")
+    )
+    run_valence_comparison(frame, config, VALENCE_OUTPUT)
+
+
+def command_report_valence() -> None:
+    """Build paired Eu-valence comparison tables, figures, and findings."""
+    build_valence_report(VALENCE_OUTPUT)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Dispatch one public workflow command."""
     command = build_parser().parse_args(argv).command
@@ -141,6 +177,8 @@ def main(argv: list[str] | None = None) -> int:
         "prepare-emission": command_prepare,
         "run": command_run,
         "report": command_report,
+        "run-valence": command_run_valence,
+        "report-valence": command_report_valence,
     }
     if command == "all":
         command_download()
@@ -148,6 +186,12 @@ def main(argv: list[str] | None = None) -> int:
         command_prepare()
         command_run()
         command_report()
+    elif command == "all-valence":
+        command_download()
+        command_validate()
+        command_prepare()
+        command_run_valence()
+        command_report_valence()
     else:
         actions[command]()
     return 0

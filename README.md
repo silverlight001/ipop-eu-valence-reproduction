@@ -2,6 +2,8 @@
 
 本项目复现 Jang 等人在 Scientific Reports 发表的 IPOP 数据集 Eu 激活荧光粉发射波长基线，并比较随机行划分与配方、基质、文献分组划分。重点不是追逐单一最高 R²，而是判断模型面对未见材料体系时的真实泛化能力。
 
+在原始复现基础上，项目还提供严格配对的 Eu²⁺/Eu³⁺区分实验。原始主表中的 `1st dopant valency` 和 `2nd dopant valency` 被回连到全部 1665 条 Eu 发射样本，得到 Eu²⁺ 626 条、Eu³⁺ 1039 条；不根据发射峰或化学式猜测价态。
+
 ## 数据与许可
 
 工作流下载 Figshare 固定版本的 IPOP v3 主表和 Eu 发射特征表，并在使用前检查文件大小、MD5 与 SHA-256。仅当 Figshare 返回 HTTP 403 时，下载器才回退至论文作者/发布方 KRICT 的官方 GitHub 镜像；镜像内容仍必须通过同一份固定 size、MD5 和 SHA-256 校验。`data/interim/source_provenance.json` 同时记录清单来源与实际 `retrieved_url`，不会把已验证的镜像缓存伪称为重新从 Figshare 下载。数据集采用 CC BY 4.0；下载后的原始数据、处理数据和实验输出均被 Git 忽略。
@@ -42,6 +44,14 @@ python -m ipop all
 
 该命令按固定顺序下载、验证、准备数据、执行嵌套交叉验证并生成中文报告。XGBoost 使用固定的 `reg:squarederror`、`hist`、单线程和经批准网格。
 
+完整执行价态对比：
+
+```bash
+python -m ipop all-valence
+```
+
+该命令重新训练混合价态与分价态两种方案，不复用旧预测。两种方案使用完全相同的样本、外层折和特征集合；每个拟合模型使用相同的候选参数网格与内层交叉验证协议。
+
 ## 分步运行
 
 ```bash
@@ -50,6 +60,8 @@ python -m ipop validate
 python -m ipop prepare-emission
 python -m ipop run
 python -m ipop report
+python -m ipop run-valence
+python -m ipop report-valence
 ```
 
 任一步失败都应先检查前一步的中间文件；`download` 可安全重跑，已存在的文件仍会重新校验哈希。
@@ -60,17 +72,27 @@ python -m ipop report
 
 实验运行期间目录会包含 `.incomplete` 标记；若训练失败，该标记会保留且旧结果工件会被清除，`report` 命令将拒绝读取该目录。只有全部实验工件成功写入后才会移除标记。
 
+价态对比结果位于 `outputs/emission-valence-comparison/`。`final_results.csv` 汇总总体配对结果，`final_results_by_valence.csv` 分别汇总 Eu²⁺与 Eu³⁺，`predictions.csv` 保留逐样本预测与价态，`findings_zh.md` 给出中文结论，`figures/` 包含总体及分价态比较图。
+
 ## 评估协议
 
 所有协议均为 5 个外层折、3 个内层折，使用固定 seed 42。特征集合为 AF、AF+T、AF+ES、AF+T+ES；模型是中位数基线和 XGBoost。除 `random_row` 外，`group_formula`、`group_host`、`group_reference` 分别禁止同一配方、host 或文献在训练与测试折之间重叠。`overlap_audit.csv` 是这一约束的可检验记录。
+
+价态实验中的 `pooled` 对全部 Eu 样本拟合一个模型；`separate` 在每个外层训练折内分别拟合 Eu²⁺和 Eu³⁺模型，再合并对应测试折预测。价态划分不会改变外层折，报告在生成前验证两种模式的训练/测试样本数完全一致。
 
 ## 结果解读
 
 首先查看 `summary_metrics.csv` 中 `random_row / AF+T+ES / xgboost`：它适于与论文的随机行基线作方向性比较。随后比较三种分组协议，后者更接近对新材料体系的外推。报告还绘制协议性能与残差、随机行特征消融和随机行预测一致性图，并保留均值与折间标准差，避免只报告最佳折。
 
+在 `AF+T+ES / XGBoost` 下，分价态训练相对混合训练的 MAE 在四种协议中均下降：`random_row` 下降 2.777 nm，`group_formula` 下降 1.415 nm，`group_host` 下降 2.225 nm，`group_reference` 下降 3.765 nm。R²在四种协议中的三种提高；`group_formula` 从 0.786 降至 0.759，因此不能把分价态描述为对所有指标、所有外推场景都一致提升。
+
 ## 已知限制
 
-Eu 发射样本来自主表匹配，少数行可存在多个来源 DOI；它们被审计标注，而不是任意指定一个文献。分组名称是数据集提供的元数据，不能保证完全等同于所有化学语义；结果也不能代替实验验证。跨环境的软件版本差异会带来数值浮动。
+Eu 发射样本来自主表匹配，少数行可存在多个来源 DOI；它们被审计标注，而不是任意指定一个文献。价态来自主表的人工整理字段，但仍继承原文献与数据整理可能存在的标注误差。分组名称是数据集提供的元数据，不能保证完全等同于所有化学语义；结果也不能代替实验验证。跨环境的软件版本差异会带来数值浮动。
+
+折间标准差只描述评估折之间的波动，不是单条新材料预测的 uncertainty。当前价态实验尚未加入晶体结构、掺杂位点、完整光谱、寿命多指数处理或样本级不确定性量化。
+
+`separate` 使用两个独立调参的模型，因此它相对 `pooled` 的收益同时包含价态分组和模型容量增加。当前结果不能解释为“增加一个价态特征”的纯因果效应；后续应增加 `pooled + valence indicator` 对照以分离两种因素。
 
 ## 后续研究路线
 

@@ -17,7 +17,9 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, floa
 def aggregate_metrics(folds: pd.DataFrame) -> pd.DataFrame:
     """Summarize audit-preserving fold metrics by experiment identifiers."""
     grouping = [
-        column for column in ("protocol", "feature_set", "model") if column in folds
+        column
+        for column in ("protocol", "feature_set", "model", "training_mode", "Eu valence")
+        if column in folds
     ]
     grouped = folds.groupby(grouping, dropna=False) if grouping else [((), folds)]
     rows: list[dict[str, object]] = []
