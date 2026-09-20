@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+from ipop.experiment import INCOMPLETE_MARKER_NAME
+
 
 @dataclass(frozen=True)
 class ReportArtifacts:
@@ -126,6 +128,10 @@ def build_report(
 ) -> ReportArtifacts:
     """Create the four scientific figures and method-level Chinese findings report."""
     root = Path(run_dir)
+    if (root / INCOMPLETE_MARKER_NAME).is_file():
+        raise ValueError(
+            "Experiment bundle is incomplete; rerun the experiment successfully before reporting"
+        )
     figures_dir = root / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     summary = pd.read_csv(root / "summary_metrics.csv")

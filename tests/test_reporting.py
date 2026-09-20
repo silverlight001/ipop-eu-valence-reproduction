@@ -181,6 +181,16 @@ def test_report_contains_required_figures_and_reproducibility_disclosure(tmp_pat
     assert all(path.exists() and path.stat().st_size > 0 for path in artifacts.figures)
 
 
+def test_report_rejects_incomplete_experiment_bundle(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    _write_report_inputs(run)
+    (run / ".incomplete").write_text("incomplete\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="incomplete"):
+        build_report(run, dataset_summary=_dataset_summary(), join_summary=_join_summary())
+
+
 def test_report_explains_missing_required_protocol(tmp_path: Path) -> None:
     run = tmp_path / "run"
     run.mkdir()

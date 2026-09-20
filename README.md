@@ -58,6 +58,8 @@ python -m ipop report
 
 `data/interim/source_provenance.json` 记录 DOI、许可、下载时间、来源链接和哈希；`validation.json` 记录主表不变量；`emission_prepared.csv` 和 `metadata_join_audit.csv` 记录匹配数据与文献歧义。实验目录 `outputs/emission-xgb/` 包含 splits、分组重叠审计、逐行预测、折级指标、汇总指标、最优参数和运行元数据；报告另外写出 `findings_zh.md` 与四张 PNG 图。
 
+实验运行期间目录会包含 `.incomplete` 标记；若训练失败，该标记会保留且旧结果工件会被清除，`report` 命令将拒绝读取该目录。只有全部实验工件成功写入后才会移除标记。
+
 ## 评估协议
 
 所有协议均为 5 个外层折、3 个内层折，使用固定 seed 42。特征集合为 AF、AF+T、AF+ES、AF+T+ES；模型是中位数基线和 XGBoost。除 `random_row` 外，`group_formula`、`group_host`、`group_reference` 分别禁止同一配方、host 或文献在训练与测试折之间重叠。`overlap_audit.csv` 是这一约束的可检验记录。

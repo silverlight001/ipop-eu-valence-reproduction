@@ -78,6 +78,7 @@ def test_run_persists_replayable_outer_fold_artifacts(tmp_path: Path) -> None:
     assert metadata["seed"] == 42
     assert metadata["config"] == lightweight_config()
     assert "python" in metadata["versions"]
+    assert not (artifacts.run_metadata.parent / ".incomplete").exists()
 
 
 def test_all_protocol_preflight_artifacts_survive_first_fit_failure(
@@ -130,6 +131,34 @@ def test_all_protocol_preflight_artifacts_survive_first_fit_failure(
         }
     for name in artifact_names:
         assert (tmp_path / "first" / name).read_bytes() == (tmp_path / "second" / name).read_bytes()
+
+
+def test_failed_rerun_invalidates_stale_results_and_marks_bundle_incomplete(
+    tmp_path: Path, monkeypatch
+) -> None:
+    run = tmp_path / "run"
+    artifacts = experiment.run_experiment(synthetic_emission(), lightweight_config(), run)
+    stale_result_paths = (
+        artifacts.predictions,
+        artifacts.fold_metrics,
+        artifacts.summary_metrics,
+        artifacts.best_params,
+    )
+    assert all(path.is_file() for path in stale_result_paths)
+
+    class FailingEstimator:
+        def fit(self, X, y):
+            raise RuntimeError("rerun fit failed")
+
+    monkeypatch.setattr(experiment, "build_dummy_pipeline", FailingEstimator)
+    with pytest.raises(RuntimeError, match="rerun fit failed"):
+        experiment.run_experiment(synthetic_emission(), lightweight_config(), run)
+
+    assert (run / ".incomplete").is_file()
+    assert all(not path.exists() for path in stale_result_paths)
+    assert artifacts.splits.is_file()
+    assert artifacts.overlap_audit.is_file()
+    assert artifacts.run_metadata.is_file()
 
 
 def test_reference_protocol_excludes_missing_reference_rows_everywhere(tmp_path: Path) -> None:

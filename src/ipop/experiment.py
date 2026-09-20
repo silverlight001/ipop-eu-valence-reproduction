@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
@@ -15,6 +16,8 @@ from ipop.features import select_features
 from ipop.metrics import aggregate_metrics, regression_metrics
 from ipop.models import build_dummy_pipeline, build_xgb_search
 from ipop.splits import GROUP_COLUMNS, audit_split_overlap, build_outer_splits
+
+INCOMPLETE_MARKER_NAME = ".incomplete"
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,27 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _begin_run(root: Path, paths: RunArtifacts) -> Path:
+    """Invalidate any prior bundle before publishing this run's preflight."""
+    marker = root / INCOMPLETE_MARKER_NAME
+    marker.write_text("Experiment run is incomplete.\n", encoding="utf-8")
+    for artifact in (
+        paths.splits,
+        paths.overlap_audit,
+        paths.predictions,
+        paths.fold_metrics,
+        paths.summary_metrics,
+        paths.best_params,
+        paths.run_metadata,
+        root / "findings_zh.md",
+    ):
+        artifact.unlink(missing_ok=True)
+    figures = root / "figures"
+    if figures.exists():
+        shutil.rmtree(figures)
+    return marker
+
+
 def run_experiment(
     frame: pd.DataFrame, config: dict[str, object], output_dir: str | Path
 ) -> RunArtifacts:
@@ -67,6 +91,7 @@ def run_experiment(
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
     paths = _artifact_paths(root)
+    incomplete_marker = _begin_run(root, paths)
     seed = int(config["seed"])
     outer_folds = int(config["outer_folds"])
     inner_folds = int(config["inner_folds"])
@@ -189,4 +214,5 @@ def run_experiment(
     folds.to_csv(paths.fold_metrics, index=False)
     summary.to_csv(paths.summary_metrics, index=False)
     _write_json(paths.best_params, parameter_records)
+    incomplete_marker.unlink()
     return paths
