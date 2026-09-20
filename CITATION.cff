@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite this software, the IPOP data paper, and the fixed Figshare dataset version."
+title: "IPOP Eu Emission Reproduction, Generalization Audit, and Valence Modeling"
+type: software
+authors:
+  - name: "silverlight001"
+version: 1.0.0
+date-released: 2026-09-20
+repository-code: "https://github.com/silverlight001/ipop-eu-valence-reproduction"
+url: "https://github.com/silverlight001/ipop-eu-valence-reproduction"
+keywords:
+  - inorganic phosphor
+  - europium
+  - machine learning
+  - materials informatics
+  - reproducibility
+  - oxidation state
+references:
+  - type: article
+    title: "Optical property dataset of inorganic phosphor"
+    authors:
+      - family-names: Jang
+        given-names: Seunghun
+      - family-names: Na
+        given-names: Gyoung S.
+      - family-names: Choi
+        given-names: Yunhee
+      - family-names: Chang
+        given-names: Hyunju
+    journal: Scientific Reports
+    volume: 14
+    year: 2024
+    doi: 10.1038/s41598-024-58351-w
+  - type: dataset
+    title: "Optical property dataset of inorganic phosphor (IPOP dataset ver. 3.0, 20231208)"
+    authors:
+      - family-names: Jang
+        given-names: Seunghun
+    year: 2023
+    doi: 10.6084/m9.figshare.24771186.v1

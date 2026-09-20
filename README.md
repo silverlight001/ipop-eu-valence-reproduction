@@ -1,20 +1,134 @@
-# IPOP Eu 发射波长复现与泛化审计
+# IPOP Eu 发射波长复现、泛化审计与价态建模
 
-本项目复现 Jang 等人在 Scientific Reports 发表的 IPOP 数据集 Eu 激活荧光粉发射波长基线，并比较随机行划分与配方、基质、文献分组划分。重点不是追逐单一最高 R²，而是判断模型面对未见材料体系时的真实泛化能力。
+[![CI](https://github.com/silverlight001/ipop-eu-valence-reproduction/actions/workflows/ci.yml/badge.svg)](https://github.com/silverlight001/ipop-eu-valence-reproduction/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
+[![Data DOI](https://img.shields.io/badge/Data_DOI-10.6084%2Fm9.figshare.24771186.v1-blue.svg)](https://doi.org/10.6084/m9.figshare.24771186.v1)
+[![Paper DOI](https://img.shields.io/badge/Paper_DOI-10.1038%2Fs41598--024--58351--w-blue.svg)](https://doi.org/10.1038/s41598-024-58351-w)
 
-在原始复现基础上，项目还提供严格配对的 Eu²⁺/Eu³⁺区分实验。原始主表中的 `1st dopant valency` 和 `2nd dopant valency` 被回连到全部 1665 条 Eu 发射样本，得到 Eu²⁺ 626 条、Eu³⁺ 1039 条；不根据发射峰或化学式猜测价态。
+> Reproducible machine-learning benchmark for Eu-activated inorganic phosphors, with leakage-aware evaluation and an explicit Eu(II)/Eu(III) comparison.
 
-## 数据与许可
+本项目复现并审计 Jang 等人 2024 年发表于 *Scientific Reports* 的 IPOP 无机荧光粉数据集发射波长模型，重点回答两个问题：
 
-工作流下载 Figshare 固定版本的 IPOP v3 主表和 Eu 发射特征表，并在使用前检查文件大小、MD5 与 SHA-256。仅当 Figshare 返回 HTTP 403 时，下载器才回退至论文作者/发布方 KRICT 的官方 GitHub 镜像；镜像内容仍必须通过同一份固定 size、MD5 和 SHA-256 校验。`data/interim/source_provenance.json` 同时记录清单来源与实际 `retrieved_url`，不会把已验证的镜像缓存伪称为重新从 Figshare 下载。数据集采用 CC BY 4.0；下载后的原始数据、处理数据和实验输出均被 Git 忽略。
+1. 仅使用化学组成和测量条件时，模型在随机划分与真正的材料外推场景中表现如何？
+2. 原论文将 Eu²⁺与 Eu³⁺混合训练；显式区分价态后，预测是否更可靠？
 
-## 为什么不能声称逐数值复现
+项目公开完整代码、固定数据版本、校验哈希、数据处理结果、折划分、逐样本预测、超参数、指标表、图表和中文讨论，目标是让其他研究者可以直接审查、复跑和扩展。
 
-原论文没有公开完整的随机划分、随机种子、超参数搜索及所有平台细节。因此这里进行的是固定公开数据和固定评估协议下的方法级复现，而非逐小数位的宣称。报告会自动标示超出预先声明阈值的复现差异，且不会改变随机种子挑选结果。
+## 一眼看懂核心结论
 
-## 环境安装
+- IPOP 主表明确提供 `1st dopant valency` 和 `2nd dopant valency`；价态并非从发射峰或化学式猜测。
+- 1665 条 Eu 发射样本全部成功回连价态，其中 Eu²⁺ 626 条、Eu³⁺ 1039 条，无缺失或冲突。
+- 分价态训练在四种评估协议中均降低总体 MAE，改善 1.415–3.765 nm。
+- R²在 `random_row`、`group_host` 和 `group_reference` 中提高，但在 `group_formula` 中从 0.786 降至 0.759。
+- 越严格的外推评估性能越低：随机行划分的高分不能直接代表发现新 host 或跨文献迁移能力。
+- Eu(III)从分价态建模中获益更明显；Eu(II)在 `group_formula` 下的 MAE反而增加 0.384 nm。
+- 当前折间标准差只描述评估稳定性，不是新样本的预测不确定性。
 
-需要 Python 3.11 或更新版本。在项目根目录创建并启用虚拟环境，然后以开发模式安装：
+![Pooled 与分价态模型的总体 R²比较](outputs/emission-valence-comparison/figures/valence_overall_comparison.png)
+
+## 为什么这个问题重要
+
+Eu²⁺和 Eu³⁺的发光机制存在本质差异。Eu²⁺通常表现为允许的 5d→4f 跃迁，对晶场和局域配位高度敏感；Eu³⁺主要表现为 4f→4f 跃迁。将二者合并为一个统计学习任务，可能迫使模型同时拟合两个不同的结构—性质关系。
+
+原论文为了保留样本量，将所有 Eu 激活样本合并训练。该选择适合作为初步基线，但也留下了一个清晰、可验证的科学问题：在相同数据和相同外层测试折上，价态专属模型是否优于混合模型？
+
+这个项目的价值不只是提高一个 R²，而是建立一套更可信的材料机器学习比较方法：
+
+- 固定公开数据版本和哈希，确保输入可追溯；
+- 保留逐样本预测与折分配，方便检查数据泄漏；
+- 同时报告随机插值和材料/文献外推性能；
+- 对总体结果和 Eu²⁺/Eu³⁺子群分别报告；
+- 明确记录负结果、例外和尚未解决的限制。
+
+## 数据概况
+
+原始 IPOP v3 数据集包含：
+
+| 项目 | 数量 |
+| --- | ---: |
+| 无机荧光粉组合 | 3952 |
+| Host | 2238 |
+| Dopant 元素 | 21 |
+| 来源文献 | 553 |
+| 光学性质观测 | 16023 |
+| 本项目 Eu 发射样本 | 1665 |
+| Eu²⁺样本 | 626 |
+| Eu³⁺样本 | 1039 |
+
+本仓库固定使用 Figshare v1：[`10.6084/m9.figshare.24771186.v1`](https://doi.org/10.6084/m9.figshare.24771186.v1)。原始数据由 IPOP 作者以 CC BY 4.0 发布。详情、字段、哈希和派生文件关系见 [数据说明](docs/DATA.md) 与 [第三方数据声明](THIRD_PARTY_DATA.md)。
+
+## 实验设计
+
+```mermaid
+flowchart LR
+    A[IPOP v3 主表] --> C[按配方、温度、激发波长、发射峰匹配]
+    B[Eu 发射 AF 特征表] --> C
+    C --> D[1665 条带 Eu 价态的样本]
+    D --> E[固定 5 折外层划分]
+    E --> F[Pooled: Eu²⁺/Eu³⁺混合模型]
+    E --> G[Separate: Eu²⁺和 Eu³⁺独立模型]
+    F --> H[相同测试样本上的 OOF 预测]
+    G --> H
+    H --> I[总体、分价态、分协议比较]
+```
+
+### 输入与目标
+
+- 目标：最大 PL 发射波长 `Emission max. (nm)`。
+- 原子特征：52 个组成统计特征，包括原子序数、原子量、原子半径、电负性、价电子数和第一电离能等。
+- 测量条件：温度 `Temp. (K)` 与激发波长 `Excitation source (nm)`。
+- 主结果特征集：`AF+T+ES`。
+- 模型：XGBoost；中位数回归作为基线。
+
+### 评估协议
+
+所有实验固定 seed 42，采用 5 折外层评估和 3 折内层超参数选择。
+
+| 协议 | 测试问题 | 强制隔离键 |
+| --- | --- | --- |
+| `random_row` | 同分布随机插值能力 | 无 |
+| `group_formula` | 面对未见完整配方 | Formula |
+| `group_host` | 面对未见 host 字符串 | Host |
+| `group_reference` | 跨来源文献迁移 | Reference/DOI |
+
+三种分组协议都经过重叠审计，强制键最大重叠数为 0。完整方法见 [方法说明](docs/METHODOLOGY.md)。
+
+## 主要结果
+
+下表为 `AF+T+ES / XGBoost` 的五个外层折均值。括号中的波动可在公开 CSV 中查看；这里突出平均效果。
+
+| 协议 | 混合 R² | 分价态 R² | ΔR² | 混合 MAE (nm) | 分价态 MAE (nm) | MAE 改善 (nm) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `random_row` | 0.797 | 0.823 | +0.027 | 14.267 | 11.490 | +2.777 |
+| `group_formula` | 0.786 | 0.759 | −0.027 | 15.211 | 13.796 | +1.415 |
+| `group_host` | 0.629 | 0.634 | +0.006 | 20.255 | 18.030 | +2.225 |
+| `group_reference` | 0.362 | 0.415 | +0.052 | 32.822 | 29.057 | +3.765 |
+
+定义：`ΔR² = separate − pooled`；`MAE 改善 = pooled − separate`，正值表示分价态方案更好。
+
+![Eu(II) 与 Eu(III) 的 MAE 分层比较](outputs/emission-valence-comparison/figures/valence_specific_mae.png)
+
+完整结果与讨论见：
+
+- [总体最终结果 CSV](outputs/emission-valence-comparison/final_results.csv)
+- [Eu²⁺/Eu³⁺分层结果 CSV](outputs/emission-valence-comparison/final_results_by_valence.csv)
+- [完整结果与讨论](docs/RESULTS.md)
+- [自动生成的中文发现](outputs/emission-valence-comparison/findings_zh.md)
+
+## 如何理解这些结果
+
+价态区分总体上降低了绝对误差，特别是在跨文献评估中。然而，这不等于“价态区分必然提升所有指标”：
+
+- `group_formula` 的总体 MAE下降，但 R²下降且折间波动增大。
+- Eu²⁺在 `group_formula` 中略有退化，说明较小的数据量和更强的配方外推可能抵消分组收益。
+- Eu³⁺在 `group_reference` 中改善最大，但其混合模型 R²为负，分价态后仍接近 0；这表明跨文献迁移仍然困难。
+- `separate` 使用两个独立调参模型，因此收益同时包含价态信息和模型容量增加。它不是“增加一个价态特征”的纯因果估计。
+
+因此，本项目支持的结论是：**Eu 价态是不可忽略的建模变量，价态专属模型能改善总体 MAE，但效果依赖具体价态与外推场景。**
+
+## 可复现运行
+
+需要 Python 3.11 或更高版本。
 
 ```bash
 python -m venv .venv
@@ -32,72 +146,101 @@ macOS/Linux：
 source .venv/bin/activate
 ```
 
+安装依赖：
+
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-## 一键运行
+运行原始复现与泛化审计：
 
 ```bash
 python -m ipop all
 ```
 
-该命令按固定顺序下载、验证、准备数据、执行嵌套交叉验证并生成中文报告。XGBoost 使用固定的 `reg:squarederror`、`hist`、单线程和经批准网格。
-
-完整执行价态对比：
+运行完整价态比较：
 
 ```bash
 python -m ipop all-valence
 ```
 
-该命令重新训练混合价态与分价态两种方案，不复用旧预测。两种方案使用完全相同的样本、外层折和特征集合；每个拟合模型使用相同的候选参数网格与内层交叉验证协议。
-
-## 分步运行
+如果已经准备好数据，也可以分步运行：
 
 ```bash
-python -m ipop download
 python -m ipop validate
 python -m ipop prepare-emission
-python -m ipop run
-python -m ipop report
 python -m ipop run-valence
 python -m ipop report-valence
 ```
 
-任一步失败都应先检查前一步的中间文件；`download` 可安全重跑，已存在的文件仍会重新校验哈希。
+更详细的环境、工件和验证步骤见 [复现指南](docs/REPRODUCIBILITY.md)。
 
-## 输出文件
+## 仓库结构
 
-`data/interim/source_provenance.json` 记录 DOI、许可、下载时间、来源链接和哈希；`validation.json` 记录主表不变量；`emission_prepared.csv` 和 `metadata_join_audit.csv` 记录匹配数据与文献歧义。实验目录 `outputs/emission-xgb/` 包含 splits、分组重叠审计、逐行预测、折级指标、汇总指标、最优参数和运行元数据；报告另外写出 `findings_zh.md` 与四张 PNG 图。
+```text
+.
+├── configs/                         固定实验配置
+├── data/
+│   ├── manifests/                   来源 URL、大小与哈希
+│   ├── raw/                         IPOP 原始 CSV（CC BY 4.0）
+│   └── interim/                     校验、匹配和带价态数据
+├── docs/                            数据、方法、结果和复现说明
+├── outputs/
+│   └── emission-valence-comparison/完整训练结果与逐样本预测
+├── src/ipop/                        数据、划分、建模、报告代码
+├── tests/                           自动化测试
+├── CITATION.cff                     本项目引用元数据
+└── pyproject.toml                   Python 依赖与工具配置
+```
 
-实验运行期间目录会包含 `.incomplete` 标记；若训练失败，该标记会保留且旧结果工件会被清除，`report` 命令将拒绝读取该目录。只有全部实验工件成功写入后才会移除标记。
+## 质量与审计
 
-价态对比结果位于 `outputs/emission-valence-comparison/`。`final_results.csv` 汇总总体配对结果，`final_results_by_valence.csv` 分别汇总 Eu²⁺与 Eu³⁺，`predictions.csv` 保留逐样本预测与价态，`findings_zh.md` 给出中文结论，`figures/` 包含总体及分价态比较图。
+- 102 个自动化测试通过。
+- `ruff` 静态检查通过。
+- 新实验的 pooled 预测与旧基线 53,232 条预测逐值完全一致。
+- 价态实验共公开 106,464 条逐样本预测，两种模式各 53,232 条。
+- pooled/separate 的 `row_id`、外层折、价态和真实值逐行配对一致。
+- 三种强制分组协议的测试键重叠均为 0。
+- 失败重跑会留下 `.incomplete` 标记并清除陈旧结果，报告器拒绝读取不完整实验。
 
-## 评估协议
+## 当前限制
 
-所有协议均为 5 个外层折、3 个内层折，使用固定 seed 42。特征集合为 AF、AF+T、AF+ES、AF+T+ES；模型是中位数基线和 XGBoost。除 `random_row` 外，`group_formula`、`group_host`、`group_reference` 分别禁止同一配方、host 或文献在训练与测试折之间重叠。`overlap_audit.csv` 是这一约束的可检验记录。
+1. 只使用组成统计和测量条件，没有显式晶体结构、局域配位或掺杂位点。
+2. 将完整发射光谱压缩为单个峰值，无法描述带宽、非对称性、多峰和颜色质量。
+3. 寿命、量子效率和热猝灭尚未纳入本轮价态比较。
+4. 没有样本级 uncertainty；折间标准差不能替代预测区间。
+5. 文献数据存在发表偏倚、实验室差异和潜在标签误差。
+6. `Host` 和 `Formula` 是字符串分组，不能保证化学家族完全独立。
+7. 两个独立模型的比较同时改变价态分组与总模型容量。
 
-价态实验中的 `pooled` 对全部 Eu 样本拟合一个模型；`separate` 在每个外层训练折内分别拟合 Eu²⁺和 Eu³⁺模型，再合并对应测试折预测。价态划分不会改变外层折，报告在生成前验证两种模式的训练/测试样本数完全一致。
+## 未来计划
 
-## 结果解读
+优先级从高到低：
 
-首先查看 `summary_metrics.csv` 中 `random_row / AF+T+ES / xgboost`：它适于与论文的随机行基线作方向性比较。随后比较三种分组协议，后者更接近对新材料体系的外推。报告还绘制协议性能与残差、随机行特征消融和随机行预测一致性图，并保留均值与折间标准差，避免只报告最佳折。
-
-在 `AF+T+ES / XGBoost` 下，分价态训练相对混合训练的 MAE 在四种协议中均下降：`random_row` 下降 2.777 nm，`group_formula` 下降 1.415 nm，`group_host` 下降 2.225 nm，`group_reference` 下降 3.765 nm。R²在四种协议中的三种提高；`group_formula` 从 0.786 降至 0.759，因此不能把分价态描述为对所有指标、所有外推场景都一致提升。
-
-## 已知限制
-
-Eu 发射样本来自主表匹配，少数行可存在多个来源 DOI；它们被审计标注，而不是任意指定一个文献。价态来自主表的人工整理字段，但仍继承原文献与数据整理可能存在的标注误差。分组名称是数据集提供的元数据，不能保证完全等同于所有化学语义；结果也不能代替实验验证。跨环境的软件版本差异会带来数值浮动。
-
-折间标准差只描述评估折之间的波动，不是单条新材料预测的 uncertainty。当前价态实验尚未加入晶体结构、掺杂位点、完整光谱、寿命多指数处理或样本级不确定性量化。
-
-`separate` 使用两个独立调参的模型，因此它相对 `pooled` 的收益同时包含价态分组和模型容量增加。当前结果不能解释为“增加一个价态特征”的纯因果效应；后续应增加 `pooled + valence indicator` 对照以分离两种因素。
-
-## 后续研究路线
-
-可扩展到其他激活离子与性质目标，加入结构表征或不确定性量化，并优先采用按时间、文献或家族的前瞻性评估。任何新增模型应保持相同的外层分组折与公开的参数搜索记录，以便公平比较。
+1. 增加 `pooled + valence indicator` 对照，分离价态信息与模型容量效应。
+2. 使用 conformal prediction、分位数模型或深度集成提供校准 uncertainty。
+3. 通过 MP-ID/ICSD-ID 引入晶体结构，并构建结构图神经网络基线。
+4. 从原始文献补充稀土占位、局域配位和电荷补偿信息。
+5. 将目标从单峰扩展到完整光谱表示或光谱参数集合。
+6. 对寿命采用多指数/分布式表示，而不是单一主时间常数。
+7. 增加时间外推、材料家族外推和独立实验验证集。
 
 ## 引用
 
-请引用论文 DOI [10.1038/s41598-024-58351-w](https://doi.org/10.1038/s41598-024-58351-w) 与数据集 Figshare DOI [10.6084/m9.figshare.24771186.v1](https://doi.org/10.6084/m9.figshare.24771186.v1)。数据集采用 CC BY 4.0。
+如果使用本仓库，请同时引用原论文和数据集：
+
+> Jang, S., Na, G. S., Choi, Y. & Chang, H. Optical property dataset of inorganic phosphor. *Scientific Reports* **14**, 7639 (2024). https://doi.org/10.1038/s41598-024-58351-w
+
+> Jang, S. Optical property dataset of inorganic phosphor (IPOP dataset ver. 3.0, 20231208). figshare (2023). https://doi.org/10.6084/m9.figshare.24771186.v1
+
+本项目的机器可读引用信息见 [`CITATION.cff`](CITATION.cff)。
+
+## 许可与归属
+
+- IPOP 原始数据由原作者以 **CC BY 4.0** 发布，版权与署名要求归原作者所有。
+- 本仓库中的数据副本、派生文件与来源关系见 [`THIRD_PARTY_DATA.md`](THIRD_PARTY_DATA.md)。
+- 本仓库代码目前未附加独立开源许可证；公开可见不等同于授予额外的软件使用许可。
+
+## 免责声明
+
+本项目是公开数据上的方法级复现和科学审计，不声称逐小数位重现原论文的未公开随机划分或平台内部细节。模型结果不能替代材料合成、结构表征、光谱测量或专业判断。
