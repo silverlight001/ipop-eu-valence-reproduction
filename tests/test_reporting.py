@@ -175,6 +175,8 @@ def test_report_contains_required_figures_and_reproducibility_disclosure(tmp_pat
 
     assert artifacts.findings.exists()
     text = artifacts.findings.read_text(encoding="utf-8")
+    assert text.startswith("# IPOP Eu 发射波长预测的复现与扩展研究\n")
+    assert "泛化审计" not in text
     assert "方法级复现" in text
     assert "未公开完整超参数" in text
     assert "group_host" in text

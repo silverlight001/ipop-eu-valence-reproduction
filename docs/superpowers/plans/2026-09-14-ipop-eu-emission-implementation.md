@@ -72,7 +72,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ipop-reproduction"
 version = "0.1.0"
-description = "Reproducible IPOP Eu emission benchmark and leakage audit"
+description = "Reproducible IPOP Eu emission study with split-aware evaluation"
 requires-python = ">=3.11"
 dependencies = [
   "matplotlib>=3.9,<4",
@@ -1624,7 +1624,7 @@ def build_report(
     )
     findings = root / "findings_zh.md"
     findings.write_text(
-        "# IPOP Eu 发射波长复现与泛化审计\n\n"
+        "# IPOP Eu 发射波长预测的复现与扩展研究\n\n"
         f"{disclosure}\n\n"
         f"- 有效主数据：{dataset_summary['records']} 条；host：{dataset_summary['unique_hosts']}；"
         f"文献：{dataset_summary['unique_references']}；性质观测：{dataset_summary['target_observations']}。\n"
@@ -1659,7 +1659,7 @@ Expected: all tests pass.
 
 ```bash
 git add src/ipop/reporting.py tests/test_reporting.py
-git commit -m "feat: report IPOP generalization audit"
+git commit -m "feat: report IPOP split-aware evaluation"
 ```
 
 ---
@@ -1854,7 +1854,7 @@ Expected: help lists `download`, `validate`, `prepare-emission`, `run`, `report`
 Create `README.md` with these exact sections:
 
 ```markdown
-# IPOP Eu 发射波长复现与泛化审计
+# IPOP Eu 发射波长预测的复现与扩展研究
 
 本项目复现 Jang 等人在 Scientific Reports 发表的 IPOP 数据集 Eu 激活荧光粉发射波长基线，并比较随机行划分与配方、基质、文献分组划分。重点不是追逐单一最高 R²，而是判断模型面对未见材料体系时的真实泛化能力。
 

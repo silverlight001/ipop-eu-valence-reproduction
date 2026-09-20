@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this repository, please cite this software, the IPOP data paper, and the fixed Figshare dataset version."
-title: "IPOP Eu Emission Reproduction, Generalization Audit, and Valence Modeling"
+title: "IPOP Eu Emission Prediction: Reproduction and Extended Study"
 type: software
 authors:
   - name: "silverlight001"

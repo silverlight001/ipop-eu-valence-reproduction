@@ -72,7 +72,7 @@ Eu-only 特征表通过以下四个观测身份字段与主表匹配：
 - `source_provenance.json`：DOI、许可、实际下载来源、时间和哈希；
 - `validation.json`：主表公开不变量；
 - `emission_prepared.csv`：带 `row_id`、Host、Reference 和 Eu valence 的建模表；
-- `metadata_join_audit.csv`：逐行匹配数量、host/DOI/价态一致性审计。
+- `metadata_join_audit.csv`：逐行记录匹配数量并检查 host、DOI 与价态一致性。
 
 `outputs/emission-valence-comparison/`：
 

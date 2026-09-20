@@ -230,7 +230,7 @@ def build_report(
     )
     findings = root / "findings_zh.md"
     findings.write_text(
-        "# IPOP Eu 发射波长复现与泛化审计\n\n"
+        "# IPOP Eu 发射波长预测的复现与扩展研究\n\n"
         f"{disclosure}\n\n"
         f"- 有效主数据：{dataset_summary['records']} 条；host：{dataset_summary['unique_hosts']}；"
         f"文献：{dataset_summary['unique_references']}；性质观测：{dataset_summary['target_observations']}。\n"

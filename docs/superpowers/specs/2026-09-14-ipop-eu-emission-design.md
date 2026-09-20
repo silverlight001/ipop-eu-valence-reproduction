@@ -1,4 +1,4 @@
-# IPOP Eu Emission Reproduction and Generalization Audit
+# IPOP Eu Emission Prediction: Reproduction and Extended Study
 
 Date: 2026-09-14
 
@@ -13,7 +13,7 @@ The demo must distinguish two questions:
 1. Can an XGBoost model reproduce the paper's reported performance range under a conventional random row split?
 2. How well does the model generalize to unseen formulas, unseen hosts, and unseen source publications?
 
-This distinction is the project's central contribution. It turns a notebook-level reproduction into an auditable study of generalization and data leakage in literature-derived materials datasets.
+This distinction is the project's central contribution. It turns a notebook-level reproduction into a reproducible study of split-dependent generalization and data-leakage risks in literature-derived materials datasets.
 
 ## 2. Scope
 

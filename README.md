@@ -1,28 +1,39 @@
-# IPOP Eu 发射波长复现、泛化审计与价态建模
+# IPOP Eu 发射波长预测的复现与扩展研究
 
 [![CI](https://github.com/silverlight001/ipop-eu-valence-reproduction/actions/workflows/ci.yml/badge.svg)](https://github.com/silverlight001/ipop-eu-valence-reproduction/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 [![Data DOI](https://img.shields.io/badge/Data_DOI-10.6084%2Fm9.figshare.24771186.v1-blue.svg)](https://doi.org/10.6084/m9.figshare.24771186.v1)
 [![Paper DOI](https://img.shields.io/badge/Paper_DOI-10.1038%2Fs41598--024--58351--w-blue.svg)](https://doi.org/10.1038/s41598-024-58351-w)
 
-> Reproducible machine-learning benchmark for Eu-activated inorganic phosphors, with leakage-aware evaluation and an explicit Eu(II)/Eu(III) comparison.
+> Reproducible machine-learning study of Eu-activated inorganic phosphors, with split-aware evaluation and an explicit Eu(II)/Eu(III) comparison.
 
-本项目复现并审计 Jang 等人 2024 年发表于 *Scientific Reports* 的 IPOP 无机荧光粉数据集发射波长模型，重点回答两个问题：
+本项目复现 Jang 等人 2024 年发表于 *Scientific Reports* 的 IPOP 无机荧光粉数据集发射波长模型，并在相同公开数据基础上开展可复现的扩展研究，重点回答三个问题：
 
-1. 仅使用化学组成和测量条件时，模型在随机划分与真正的材料外推场景中表现如何？
-2. 原论文将 Eu²⁺与 Eu³⁺混合训练；显式区分价态后，预测是否更可靠？
+1. 在原论文未公开精确随机划分和全部训练细节的条件下，能否复现其主要建模流程和性能量级？
+2. 随机行划分与按配方、host 或来源文献分组的划分，会怎样影响性能判断？
+3. 原论文将 Eu²⁺与 Eu³⁺混合训练；显式区分价态后，预测结果如何变化？
 
 项目公开完整代码、固定数据版本、校验哈希、数据处理结果、折划分、逐样本预测、超参数、指标表、图表和中文讨论，目标是让其他研究者可以直接审查、复跑和扩展。
 
-## 一眼看懂核心结论
+## 核心结论
 
-- IPOP 主表明确提供 `1st dopant valency` 和 `2nd dopant valency`；价态并非从发射峰或化学式猜测。
-- 1665 条 Eu 发射样本全部成功回连价态，其中 Eu²⁺ 626 条、Eu³⁺ 1039 条，无缺失或冲突。
-- 分价态训练在四种评估协议中均降低总体 MAE，改善 1.415–3.765 nm。
-- R²在 `random_row`、`group_host` 和 `group_reference` 中提高，但在 `group_formula` 中从 0.786 降至 0.759。
-- 越严格的外推评估性能越低：随机行划分的高分不能直接代表发现新 host 或跨文献迁移能力。
-- Eu(III)从分价态建模中获益更明显；Eu(II)在 `group_formula` 下的 MAE反而增加 0.384 nm。
-- 当前折间标准差只描述评估稳定性，不是新样本的预测不确定性。
+### 本项目已经验证的结果
+
+- `random_row` 没有重复分配同一个 `row_id`，但没有隔离相关观测。在本次固定五折划分中，训练集和测试集之间单折最多重叠 55 个 Formula、93 个 Host 和 160 个 Reference。这构成分组信息或来源信息泄漏的风险，可能使随机划分的性能估计偏乐观；对应的分组协议则将各自强制隔离键的重叠降为 0。
+- 从 `random_row` 到 `group_reference`，XGBoost 的 R²由 0.797 降至 0.362，MAE由 14.267 nm 增至 32.822 nm。随机行划分的高分主要反映已见数据分布附近的插值能力，不能直接代表新 host 发现或跨文献迁移能力。
+- IPOP 主表明确提供 `1st dopant valency` 和 `2nd dopant valency`；价态并非根据发射峰或化学式推断。1665 条 Eu 发射样本全部成功回连价态，其中 Eu²⁺ 626 条、Eu³⁺ 1039 条，无缺失或冲突。
+- Eu²⁺与 Eu³⁺对应不同的电子跃迁机制，不应在未经检验的情况下视为同一均质学习任务。分价态训练在四种评估协议中均降低总体 MAE，改善 1.415–3.765 nm。
+- 分价态训练并非对所有指标和子群都更优：R²在 `random_row`、`group_host` 和 `group_reference` 中提高，但在 `group_formula` 中从 0.786 降至 0.759；Eu²⁺在 `group_formula` 下的 MAE增加 0.384 nm。
+
+### 当前尚未解决的问题
+
+- 现有模型只使用组成统计和实验条件，没有显式表示晶体结构、Eu 的局域配位、晶场环境和具体掺杂位点。
+- 将完整发射光谱压缩为单个峰值波长，丢失了带宽、峰形、非对称性、多峰结构和颜色质量等信息。
+- 寿命、量子效率和热猝灭尚未纳入本轮价态比较；其中寿命也不应默认简化为单一主时间常数。
+- 当前没有样本级预测不确定性；折间标准差只描述评估结果的稳定性，不能替代预测区间。
+- `separate` 使用两个独立调参模型，观察到的收益同时包含价态区分和模型容量增加。后续仍需增加 `pooled + valence indicator` 对照。
+
+这些未解决问题是当前结论的适用边界和后续扩展方向，不应被表述为本轮实验已经验证的改进效果。
 
 ![Pooled 与分价态模型的总体 R²比较](outputs/emission-valence-comparison/figures/valence_overall_comparison.png)
 
@@ -91,7 +102,7 @@ flowchart LR
 | `group_host` | 面对未见 host 字符串 | Host |
 | `group_reference` | 跨来源文献迁移 | Reference/DOI |
 
-三种分组协议都经过重叠审计，强制键最大重叠数为 0。完整方法见 [方法说明](docs/METHODOLOGY.md)。
+三种分组协议都经过训练集—测试集重叠检查，强制键最大重叠数为 0。完整方法见 [方法说明](docs/METHODOLOGY.md)。
 
 ## 主要结果
 
@@ -152,7 +163,7 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-运行原始复现与泛化审计：
+运行基线复现与分组评估：
 
 ```bash
 python -m ipop all
@@ -193,7 +204,7 @@ python -m ipop report-valence
 └── pyproject.toml                   Python 依赖与工具配置
 ```
 
-## 质量与审计
+## 质量控制与验证
 
 - 102 个自动化测试通过。
 - `ruff` 静态检查通过。
@@ -243,4 +254,4 @@ python -m ipop report-valence
 
 ## 免责声明
 
-本项目是公开数据上的方法级复现和科学审计，不声称逐小数位重现原论文的未公开随机划分或平台内部细节。模型结果不能替代材料合成、结构表征、光谱测量或专业判断。
+本项目是基于公开数据的方法级复现与扩展研究，不声称逐小数位重现原论文未公开的随机划分或平台内部细节。模型结果不能替代材料合成、结构表征、光谱测量或专业判断。
